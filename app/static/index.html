@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk Certificate Generator</title>
+    <style>
+        :root {
+            --bg-color: #f9fafb;
+            --text-color: #111827;
+            --card-bg: #ffffff;
+            --border-color: #e5e7eb;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success: #10b981;
+            --danger: #ef4444;
+            --muted: #6b7280;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #111827;
+                --text-color: #f9fafb;
+                --card-bg: #1f2937;
+                --border-color: #374151;
+                --muted: #9ca3af;
+            }
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.5;
+            margin: 0;
+            padding: 2rem 1rem;
+        }
+        main { max-width: 800px; margin: 0 auto; }
+        .card {
+            background: var(--card-bg); border: 1px solid var(--border-color);
+            border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        h1, h2 { margin-top: 0; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-weight: 500; margin-bottom: 0.25rem; }
+        input, textarea {
+            width: 100%; box-sizing: border-box; padding: 0.5rem;
+            border: 1px solid var(--border-color); border-radius: 4px;
+            background: var(--bg-color); color: var(--text-color);
+        }
+        button, .btn {
+            background: var(--primary); color: white; border: none;
+            padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer;
+            font-weight: 500; text-decoration: none; display: inline-block;
+        }
+        button:hover, .btn:hover { background: var(--primary-hover); }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-secondary { background: var(--muted); }
+        .btn-secondary:hover { opacity: 0.9; }
+        .hidden { display: none !important; }
+        .flex { display: flex; gap: 1rem; align-items: center; }
+        .progress-bar {
+            background: var(--border-color); border-radius: 999px; height: 8px; overflow: hidden; margin-top: 0.5rem;
+        }
+        .progress-fill { background: var(--primary); height: 100%; transition: width 0.3s; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid var(--border-color); }
+        .badge {
+            padding: 0.25rem 0.5rem; border-radius: 999px; font-size: 0.875rem;
+            background: var(--border-color);
+        }
+        .badge.success { background: var(--success); color: white; }
+        .badge.failed { background: var(--danger); color: white; }
+        .error-msg { color: var(--danger); font-size: 0.875rem; margin-bottom: 1rem; }
+        .text-danger { color: var(--danger); }
+    </style>
+</head>
+<body>
+    <main>
+        <header>
+            <h1>Bulk Certificate Generator</h1>
+            <p style="color: var(--muted);">Generate custom PDF certificates for multiple recipients at once.</p>
+        </header>
+
+        <section class="card">
+            <div id="error-container" class="error-msg hidden"></div>
+            
+            <form id="cert-form">
+                <div class="form-group">
+                    <label for="event_name">Event Name</label>
+                    <input type="text" id="event_name" required placeholder="e.g., Python Bootcamp 2026">
+                </div>
+                
+                <div class="form-group">
+                    <label for="issue_date">Issue Date</label>
+                    <input type="date" id="issue_date" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="recipients">Recipients (name, email, course)</label>
+                    <textarea id="recipients" rows="5" required placeholder="Alice Smith, alice@example.com, Intro to Python&#10;Bob Jones, bob@example.com"></textarea>
+                </div>
+                
+                <div class="flex">
+                    <button type="submit" id="submit-btn">Generate certificates</button>
+                    <button type="button" id="load-sample-btn" class="btn-secondary">Load sample data</button>
+                </div>
+            </form>
+        </section>
+
+        <section id="status-card" class="card hidden">
+            <h2>Job Status</h2>
+            <div class="flex" style="justify-content: space-between; margin-bottom: 0.5rem;">
+                <div><strong id="job-status-text">Pending</strong></div>
+                <div style="color: var(--muted); font-size: 0.875rem;">Job ID: <span id="job-id-text"></span></div>
+            </div>
+            <div style="font-size: 0.875rem; color: var(--muted);">
+                Total: <span id="job-total">0</span> | 
+                Succeeded: <span id="job-succeeded" style="color: var(--success)">0</span> | 
+                Failed: <span id="job-failed" style="color: var(--danger)">0</span>
+            </div>
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+            </div>
+        </section>
+
+        <section id="results-card" class="card hidden">
+            <div class="flex" style="justify-content: space-between;">
+                <h2>Results</h2>
+                <a id="download-all-btn" href="#" class="btn hidden">Download all (ZIP)</a>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Status</th>
+                        <th>Action / Error</th>
+                    </tr>
+                </thead>
+                <tbody id="results-tbody">
+                    <!-- Rows injected via JS -->
+                </tbody>
+            </table>
+        </section>
+    </main>
+
+    <script>
+        const API_BASE = '/api/v1';
+        let currentPollInterval = null;
+
+        // Set default date to today
+        document.getElementById('issue_date').valueAsDate = new Date();
+
+        // Load sample data button
+        document.getElementById('load-sample-btn').addEventListener('click', () => {
+            const sampleData = [
+                "John Doe, john.doe@example.com, Advanced React",
+                "Jane Smith, jane.smith@example.com, CSS Grid Mastery",
+                "Bad Email User, not-an-email, Failed Course",
+                "Alice Johnson, alice.j@example.com, Python Basics",
+                "Bob Williams, bob.w@example.com"
+            ].join('\n');
+            document.getElementById('recipients').value = sampleData;
+            document.getElementById('event_name').value = "Web Development Summit";
+        });
+
+        // Parse textarea into an array of objects
+        function parseRecipients(text) {
+            return text.split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0)
+                .map(line => {
+                    const parts = line.split(',').map(p => p.trim());
+                    return {
+                        name: parts[0] || '',
+                        email: parts[1] || '',
+                        course: parts[2] || undefined
+                    };
+                });
+        }
+
+        // Handle form submission
+        document.getElementById('cert-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const submitBtn = document.getElementById('submit-btn');
+            const errorContainer = document.getElementById('error-container');
+            
+            submitBtn.disabled = true;
+            errorContainer.classList.add('hidden');
+            errorContainer.textContent = '';
+            document.getElementById('status-card').classList.add('hidden');
+            document.getElementById('results-card').classList.add('hidden');
+            
+            if (currentPollInterval) clearInterval(currentPollInterval);
+
+            const payload = {
+                event_name: document.getElementById('event_name').value,
+                issue_date: document.getElementById('issue_date').value,
+                recipients: parseRecipients(document.getElementById('recipients').value)
+            };
+
+            try {
+                await submitJob(payload);
+            } catch (err) {
+                errorContainer.textContent = err.message;
+                errorContainer.classList.remove('hidden');
+                submitBtn.disabled = false;
+            }
+        });
+
+        // POST job to API
+        async function submitJob(payload) {
+            const res = await fetch(`${API_BASE}/jobs/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) {
+                if (res.status === 422) {
+                    throw new Error("Validation Error: Please check your input format.");
+                }
+                const errorData = await res.json().catch(() => ({}));
+                throw new Error(errorData.detail || `Server error (${res.status})`);
+            }
+
+            const data = await res.json();
+            document.getElementById('job-id-text').textContent = data.job_id;
+            document.getElementById('status-card').classList.remove('hidden');
+            
+            // Start polling
+            currentPollInterval = setInterval(() => pollJob(data.job_id), 1500);
+            pollJob(data.job_id); // initial poll
+        }
+
+        // Poll job status
+        async function pollJob(jobId) {
+            try {
+                const res = await fetch(`${API_BASE}/jobs/${jobId}`);
+                if (!res.ok) throw new Error("Failed to fetch job status");
+                
+                const job = await res.json();
+                renderStatus(job);
+
+                if (job.status === 'completed' || job.status === 'completed_with_errors') {
+                    clearInterval(currentPollInterval);
+                    document.getElementById('submit-btn').disabled = false;
+                    fetchAndRenderResults(jobId, job.succeeded);
+                }
+            } catch (err) {
+                console.error("Polling error:", err);
+                clearInterval(currentPollInterval);
+                document.getElementById('submit-btn').disabled = false;
+            }
+        }
+
+        // Update status card UI
+        function renderStatus(job) {
+            document.getElementById('job-status-text').textContent = job.status.replace(/_/g, ' ').toUpperCase();
+            document.getElementById('job-total').textContent = job.total;
+            document.getElementById('job-succeeded').textContent = job.succeeded;
+            document.getElementById('job-failed').textContent = job.failed;
+            document.getElementById('progress-fill').style.width = `${job.progress_percent || 0}%`;
+        }
+
+        // Fetch and show certificates results
+        async function fetchAndRenderResults(jobId, succeededCount) {
+            try {
+                const res = await fetch(`${API_BASE}/jobs/${jobId}/certificates`);
+                if (!res.ok) throw new Error("Failed to fetch certificates");
+                const responseData = await res.json();
+                
+                renderResults(responseData.certificates, jobId, succeededCount);
+            } catch (err) {
+                console.error("Results error:", err);
+            }
+        }
+
+        // Update results table UI
+        function renderResults(certificates, jobId, succeededCount) {
+            const tbody = document.getElementById('results-tbody');
+            tbody.innerHTML = ''; // clear previous
+            
+            certificates.forEach(cert => {
+                const tr = document.createElement('tr');
+                
+                const tdName = document.createElement('td');
+                tdName.textContent = cert.name;
+                
+                const tdEmail = document.createElement('td');
+                tdEmail.textContent = cert.email;
+                
+                const tdStatus = document.createElement('td');
+                const badge = document.createElement('span');
+                badge.className = `badge ${cert.status === 'success' ? 'success' : 'failed'}`;
+                badge.textContent = cert.status;
+                tdStatus.appendChild(badge);
+                
+                const tdAction = document.createElement('td');
+                if (cert.status === 'success') {
+                    const link = document.createElement('a');
+                    link.href = `${API_BASE}/certificates/${cert.id}/download`;
+                    link.textContent = 'Download PDF';
+                    link.target = '_blank';
+                    tdAction.appendChild(link);
+                } else {
+                    tdAction.className = 'text-danger';
+                    tdAction.textContent = cert.error_message || 'Unknown error';
+                }
+                
+                tr.append(tdName, tdEmail, tdStatus, tdAction);
+                tbody.appendChild(tr);
+            });
+
+            // Handle "Download all" button
+            const downloadAllBtn = document.getElementById('download-all-btn');
+            if (succeededCount > 0) {
+                downloadAllBtn.href = `${API_BASE}/jobs/${jobId}/download`;
+                downloadAllBtn.classList.remove('hidden');
+            } else {
+                downloadAllBtn.classList.add('hidden');
+            }
+
+            document.getElementById('results-card').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
